@@ -23,19 +23,53 @@ import folder_paths
 import comfy.model_management as mm
 import comfy.utils
 
-from diffusers import (
-    AutoencoderKL,
-    FlowMatchEulerDiscreteScheduler,
-    GlmImagePipeline,
-)
-from diffusers.models.transformers.transformer_glm_image import (
-    GlmImageTransformer2DModel,
-)
-from diffusers.pipelines.glm_image import (
-    GlmImageForConditionalGeneration,
-    GlmImageProcessor,
-)
+from _is_changed_util import hash_args_and_kwargs
+
+# AutoencoderKL and FlowMatchEulerDiscreteScheduler ship in stable diffusers
+# releases, so importing them eagerly is safe. The GLM-Image specific symbols
+# (GlmImagePipeline, GlmImageTransformer2DModel, GlmImageForConditionalGeneration,
+# GlmImageProcessor) live in unreleased / patch-level diffusers branches at
+# time of writing. Importing them at module load crashes the whole pack on any
+# diffusers install that has not landed them yet, so they are deferred — the
+# nodes register, and the user only sees the "install …" message when they
+# actually try to run a GLM-Image node.
+from diffusers import AutoencoderKL
 from transformers import AutoTokenizer, T5EncoderModel
+
+
+_GLM_IMAGE_INSTALL_HINT = (
+    "GLM-Image requires a diffusers build that exposes the `glm_image` pipeline "
+    "and the FlowMatch Euler scheduler. Your installed diffusers does not have them yet. "
+    "Install a build that does, e.g.:\n"
+    "    pip install --upgrade 'git+https://github.com/huggingface/diffusers.git'\n"
+    "Then restart ComfyUI."
+)
+
+
+def _require_glm_image():
+    """Lazy-import the GLM-Image specific diffusers classes.
+
+    Returns a dict of {name: class}. Raises ImportError with a friendly
+    install hint if the local diffusers does not ship GLM-Image.
+    """
+    try:
+        from diffusers import FlowMatchEulerDiscreteScheduler, GlmImagePipeline
+        from diffusers.models.transformers.transformer_glm_image import (
+            GlmImageTransformer2DModel,
+        )
+        from diffusers.pipelines.glm_image import (
+            GlmImageForConditionalGeneration,
+            GlmImageProcessor,
+        )
+    except ImportError as e:
+        raise ImportError(_GLM_IMAGE_INSTALL_HINT) from e
+    return {
+        "FlowMatchEulerDiscreteScheduler": FlowMatchEulerDiscreteScheduler,
+        "GlmImagePipeline": GlmImagePipeline,
+        "GlmImageTransformer2DModel": GlmImageTransformer2DModel,
+        "GlmImageForConditionalGeneration": GlmImageForConditionalGeneration,
+        "GlmImageProcessor": GlmImageProcessor,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +137,50 @@ def _free_vram_ram():
         except Exception: pass
 
 
+def _require_image_bhwc(tensor: torch.Tensor, name: str = "image") -> torch.Tensor:
+    """Validate ComfyUI IMAGE tensor shape [B, H, W, C]."""
+    if not isinstance(tensor, torch.Tensor) or tensor.ndim != 4:
+        raise ValueError(
+            f"{name} must be a 4D IMAGE tensor [B,H,W,C]; "
+            f"got {type(tensor).__name__} shape {getattr(tensor, 'shape', None)}"
+        )
+    if tensor.shape[-1] not in (3, 4):
+        raise ValueError(
+            f"{name} last dimension must be 3 or 4 channels; got shape {tuple(tensor.shape)}"
+        )
+    return tensor
+
+
+def _require_bundle(bundle: dict, name: str, required_keys: tuple[str, ...]) -> dict:
+    if not isinstance(bundle, dict):
+        raise ValueError(f"{name} expected dict bundle; got {type(bundle).__name__}")
+    missing = [k for k in required_keys if k not in bundle]
+    if missing:
+        raise ValueError(f"{name} bundle missing keys: {missing}")
+    return bundle
+
+
+def _bundle_path(bundle: dict | None) -> str | None:
+    if isinstance(bundle, dict):
+        path = bundle.get("path")
+        if path is not None:
+            return str(path)
+    return None
+
+
+def _ensure_image_output(tensor: torch.Tensor) -> torch.Tensor:
+    if not isinstance(tensor, torch.Tensor) or tensor.ndim != 4:
+        raise ValueError(
+            f"GLMImageSeparateSampler output must be 4D IMAGE [B,H,W,C]; "
+            f"got {type(tensor).__name__} shape {getattr(tensor, 'shape', None)}"
+        )
+    if tensor.shape[-1] not in (3, 4):
+        raise ValueError(
+            f"GLMImageSeparateSampler output last dim must be 3 or 4; got {tuple(tensor.shape)}"
+        )
+    return tensor.float().cpu().clamp(0, 1)
+
+
 # ---------------------------------------------------------------------------
 # Tooltip-rich combos / inputs
 # ---------------------------------------------------------------------------
@@ -150,7 +228,17 @@ class GLMImageVAELoader:
     FUNCTION = "load"
     CATEGORY = "GLMImage/loaders"
 
+    @classmethod
+    def IS_CHANGED(cls, model_id, dtype, device, enable_slicing, enable_tiling, **kwargs):
+        return hash_args_and_kwargs(
+            model_id, dtype, device, enable_slicing, enable_tiling, **kwargs,
+        )
+
     def load(self, model_id, dtype, device, enable_slicing, enable_tiling):
+        with torch.inference_mode():
+            return self._load_impl(model_id, dtype, device, enable_slicing, enable_tiling)
+
+    def _load_impl(self, model_id, dtype, device, enable_slicing, enable_tiling):
         path = _resolve(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
@@ -201,7 +289,15 @@ class GLMImageCLIPLoader:
     FUNCTION = "load"
     CATEGORY = "GLMImage/loaders"
 
+    @classmethod
+    def IS_CHANGED(cls, model_id, dtype, device, **kwargs):
+        return hash_args_and_kwargs(model_id, dtype, device, **kwargs)
+
     def load(self, model_id, dtype, device):
+        with torch.inference_mode():
+            return self._load_impl(model_id, dtype, device)
+
+    def _load_impl(self, model_id, dtype, device):
         path = _resolve(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
@@ -209,14 +305,15 @@ class GLMImageCLIPLoader:
         t0 = time.perf_counter()
         print(f"[GLMImageCLIPLoader] loading text + vlm + tokenizer + processor from {path}")
         try:
+            _glm = _require_glm_image()
             tokenizer    = AutoTokenizer.from_pretrained(path, subfolder="tokenizer", trust_remote_code=True)
             print(f"  [+{time.perf_counter()-t0:.1f}s] tokenizer ok")
-            processor    = GlmImageProcessor.from_pretrained(path, subfolder="processor")
+            processor    = _glm["GlmImageProcessor"].from_pretrained(path, subfolder="processor")
             print(f"  [+{time.perf_counter()-t0:.1f}s] processor ok")
             text_encoder = T5EncoderModel.from_pretrained(path, subfolder="text_encoder", torch_dtype=torch_dtype)
             text_encoder.eval().to(dev)
             print(f"  [+{time.perf_counter()-t0:.1f}s] text_encoder ok")
-            vlm = GlmImageForConditionalGeneration.from_pretrained(
+            vlm = _glm["GlmImageForConditionalGeneration"].from_pretrained(
                 path, subfolder="vision_language_encoder", torch_dtype=torch_dtype, trust_remote_code=True,
             )
             vlm.eval().to(dev)
@@ -266,7 +363,17 @@ class GLMImageModelLoader:
     FUNCTION = "load"
     CATEGORY = "GLMImage/loaders"
 
+    @classmethod
+    def IS_CHANGED(cls, model_id, dtype, device, attention_backend, attention_slicing, **kwargs):
+        return hash_args_and_kwargs(
+            model_id, dtype, device, attention_backend, attention_slicing, **kwargs,
+        )
+
     def load(self, model_id, dtype, device, attention_backend, attention_slicing):
+        with torch.inference_mode():
+            return self._load_impl(model_id, dtype, device, attention_backend, attention_slicing)
+
+    def _load_impl(self, model_id, dtype, device, attention_backend, attention_slicing):
         path = _resolve(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
@@ -274,12 +381,13 @@ class GLMImageModelLoader:
         t0 = time.perf_counter()
         print(f"[GLMImageModelLoader] loading transformer/ + scheduler/ from {path}")
         try:
-            transformer = GlmImageTransformer2DModel.from_pretrained(
+            _glm = _require_glm_image()
+            transformer = _glm["GlmImageTransformer2DModel"].from_pretrained(
                 path, subfolder="transformer", torch_dtype=torch_dtype
             )
             transformer.eval().to(dev)
             print(f"  [+{time.perf_counter()-t0:.1f}s] transformer ok")
-            scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(path, subfolder="scheduler")
+            scheduler = _glm["FlowMatchEulerDiscreteScheduler"].from_pretrained(path, subfolder="scheduler")
             print(f"  [+{time.perf_counter()-t0:.1f}s] scheduler ok")
 
             applied = "sdpa"
@@ -308,6 +416,7 @@ class GLMImageModelLoader:
 def _comfy_image_to_pil_list(image_tensor):
     """ComfyUI IMAGE tensor (B,H,W,C) float [0,1] → list of PIL.Image."""
     from PIL import Image
+    image_tensor = _require_image_bhwc(image_tensor, "image")
     out = []
     arr = image_tensor.detach().cpu().float().clamp(0, 1).numpy()
     for i in range(arr.shape[0]):
@@ -385,14 +494,40 @@ class GLMImageSeparateSampler:
     FUNCTION = "sample"
     CATEGORY = "GLMImage/sampling"
 
+    @classmethod
+    def IS_CHANGED(cls, vae, clip, model, prompt, negative_prompt, seed, steps,
+                   guidance_scale, width, height, batch_size, denoise_strength,
+                   free_after, image=None, **kwargs):
+        return hash_args_and_kwargs(
+            _bundle_path(vae), _bundle_path(clip), _bundle_path(model),
+            prompt, negative_prompt, seed, steps, guidance_scale, width, height,
+            batch_size, denoise_strength, free_after, image, **kwargs,
+        )
+
     def sample(self, vae, clip, model, prompt, negative_prompt, seed, steps,
                guidance_scale, width, height, batch_size, denoise_strength,
                free_after, image=None):
+        vae = _require_bundle(vae, "vae", ("vae", "dtype", "device", "path"))
+        clip = _require_bundle(clip, "clip", ("tokenizer", "processor", "text_encoder", "vlm", "dtype", "device", "path"))
+        model = _require_bundle(model, "model", ("transformer", "scheduler", "dtype", "device", "path"))
+        if image is not None:
+            _require_image_bhwc(image, "image")
+        with torch.inference_mode():
+            return self._sample_impl(
+                vae, clip, model, prompt, negative_prompt, seed, steps,
+                guidance_scale, width, height, batch_size, denoise_strength,
+                free_after, image,
+            )
+
+    def _sample_impl(self, vae, clip, model, prompt, negative_prompt, seed, steps,
+                     guidance_scale, width, height, batch_size, denoise_strength,
+                     free_after, image=None):
         # Round to multiples of 32
         width  = max(64, (int(width)  // 32) * 32)
         height = max(64, (int(height) // 32) * 32)
 
-        pipe = GlmImagePipeline(
+        _glm = _require_glm_image()
+        pipe = _glm["GlmImagePipeline"](
             vae=vae["vae"],
             text_encoder=clip["text_encoder"],
             tokenizer=clip["tokenizer"],
@@ -465,7 +600,7 @@ class GLMImageSeparateSampler:
             imgs = out.images
             if isinstance(imgs, torch.Tensor) and imgs.dim() == 4 and imgs.shape[1] in (3, 4):
                 imgs = imgs.permute(0, 2, 3, 1).contiguous()  # BHWC for ComfyUI
-            imgs = imgs.float().cpu().clamp(0, 1)
+            imgs = _ensure_image_output(imgs)
             total = time.perf_counter() - t_start
             print(f"[GLMImageSeparateSampler] DONE in {total:.1f}s ({effective_steps/total:.2f} it/s)")
             return (imgs,)
