@@ -23,7 +23,7 @@ import folder_paths
 import comfy.model_management as mm
 import comfy.utils
 
-from _is_changed_util import hash_args_and_kwargs
+from ._is_changed_util import hash_args_and_kwargs
 
 # AutoencoderKL and FlowMatchEulerDiscreteScheduler ship in stable diffusers
 # releases, so importing them eagerly is safe. The GLM-Image specific symbols

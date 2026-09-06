@@ -21,14 +21,34 @@ def _load_util():
 
 
 def _load_separate_nodes():
-    if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
-    _load_util()
-    try:
-        import separate_nodes
-    except ImportError as exc:
-        pytest.skip(f"separate_nodes import unavailable: {exc}")
-    return separate_nodes
+    """Load separate_nodes AS PART OF THE PACKAGE, the way ComfyUI does.
+
+    This used to do `sys.path.insert(ROOT); import separate_nodes` — loading the
+    module standalone. That is precisely the anti-pattern that let the pack ship
+    registering ZERO nodes: standalone loading makes an absolute sibling import
+    (`from _is_changed_util import ...`) resolve, so the test passed against an
+    import path production never uses. Sibling imports are relative now, which a
+    standalone load cannot satisfy at all.
+
+    Skipping is reserved for genuinely absent third-party weights/libraries
+    (diffusers, transformers). An ImportError from OUR OWN modules must fail.
+    """
+    pkg_name = str(ROOT).replace(".", "_x_")
+    if pkg_name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(
+            pkg_name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)]
+        )
+        assert spec and spec.loader
+        pkg = importlib.util.module_from_spec(spec)
+        sys.modules[pkg_name] = pkg  # BEFORE exec_module
+        try:
+            spec.loader.exec_module(pkg)
+        except ModuleNotFoundError as exc:
+            missing = (exc.name or "").split(".")[0]
+            if missing in {"diffusers", "transformers", "accelerate", "sentencepiece"}:
+                pytest.skip(f"optional dependency missing: {missing}")
+            raise
+    return importlib.import_module(f"{pkg_name}.separate_nodes")
 
 
 def test_hash_args_and_kwargs_stable_for_scalars():
