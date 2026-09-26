@@ -23,4 +23,8 @@ from .separate_nodes import (
 NODE_CLASS_MAPPINGS = dict(SEPARATE_NODE_CLASS_MAPPINGS)
 NODE_DISPLAY_NAME_MAPPINGS = dict(SEPARATE_NODE_DISPLAY_NAME_MAPPINGS)
 
-__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]
+# The pack had no front-end; this directory carries only the house brand
+# (_c2c_brand.js), so its nodes share the Code2Collapse look on the canvas.
+WEB_DIRECTORY = "./web"
+
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
