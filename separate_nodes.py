@@ -87,12 +87,17 @@ def _scan_diffusers_folders():
     for root in folder_paths.get_folder_paths("diffusers"):
         if not os.path.exists(root):
             continue
-        for dirpath, _subdirs, filenames in os.walk(root, followlinks=True):
+        for dirpath, subdirs, filenames in os.walk(root, followlinks=True):
             if "model_index.json" in filenames:
                 rel = os.path.relpath(dirpath, root)
                 if rel == ".":
                     rel = os.path.basename(dirpath)
                 found.append((rel, dirpath))
+                # A22 L9.117: a model folder is a leaf for this list. Without this the walk entered every model's
+                # transformer/ vae/ shard folders, on every /object_info (three loaders build this list).
+                subdirs[:] = []
+            else:
+                subdirs[:] = [d for d in subdirs if not d.startswith(".")]
     return found
 
 
@@ -446,7 +451,8 @@ class GLMImageSeparateSampler:
                 }),
                 "negative_prompt": ("STRING", {
                     "multiline": True, "default": "",
-                    "tooltip": "Negative prompt. Leave empty if the pipeline doesn't support CFG (SDNQ-4bit ignores this).",
+                    "tooltip": "Ignored: the GLM-Image pipeline has no negative prompt (diffusers GlmImagePipeline "
+                               "takes only pre-computed negative embeddings). Kept so saved workflows load.",
                 }),
                 "seed": ("INT", {
                     "default": 42, "min": 0, "max": 0xffffffffffffffff,
@@ -474,7 +480,10 @@ class GLMImageSeparateSampler:
                 }),
                 "denoise_strength": ("FLOAT", {
                     "default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,
-                    "tooltip": "I2I only — fraction of the schedule to actually denoise. 1.0 = full noise (T2I-equivalent), 0.0 = return the input. Ignored when `image` is unconnected.",
+                    "tooltip": "When an image is connected: the fraction of `steps` that are run (0.5 = half the "
+                               "steps, at least 1). GLM-Image uses the image as a reference and always starts "
+                               "from noise, so this is not img2img strength and 0 does not return the input. "
+                               "Ignored when `image` is unconnected.",
                 }),
                 "free_after": ("BOOLEAN", {
                     "default": False,
