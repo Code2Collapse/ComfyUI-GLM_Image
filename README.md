@@ -13,7 +13,7 @@ This pack solves that by exposing **four nodes**: three independent loaders (VAE
 - Frees VRAM and RAM in a `try/finally` on stop or error.
 - Supports both text-to-image and image-to-image (via optional `image` + `denoise_strength`).
 
-Models are read from `ComfyUI/models/diffusers/<repo-name>/` (any folder containing `model_index.json` is auto-detected). HF Hub IDs are listed as fallbacks; selecting one downloads on first use into your HF cache.
+Models are read from `ComfyUI/models/diffusers/<repo-name>/` (any folder containing `model_index.json` is auto-detected). HF Hub IDs are listed as fallbacks. Since 2026-11-07 a `[HF Hub]` choice downloads (tens of GB) only when the loader's `allow_download` switch is on (last input, off by default; saved workflows keep their values). With it off, a copy already in your Hugging Face cache is used, or the run stops naming the model and the folder it belongs in.
 
 ## Installation
 

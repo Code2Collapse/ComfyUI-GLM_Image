@@ -24,6 +24,7 @@ import comfy.model_management as mm
 import comfy.utils
 
 from ._is_changed_util import hash_args_and_kwargs
+from ._download_policy import ModelNotDownloaded, allow_downloads, downloads_allowed, hf_cached_snapshot
 
 # AutoencoderKL and FlowMatchEulerDiscreteScheduler ship in stable diffusers
 # releases, so importing them eagerly is safe. The GLM-Image specific symbols
@@ -114,6 +115,20 @@ def _resolve(name: str) -> str:
         if name == rel or name == os.path.basename(abs_path):
             return abs_path
     return name
+
+
+def _resolve_for_load(name: str) -> str:
+    """A local diffusers folder as is. A "[HF Hub] <repo>" choice downloads (tens of GB) only with the loader's
+    allow_download (owner D7.91, L7.100); without it the Hugging Face cache copy is used, or the run stops saying
+    what is missing and where it goes."""
+    path = _resolve(name)
+    if os.path.isdir(path) or downloads_allowed():
+        return path
+    snap = hf_cached_snapshot(path)
+    if snap:
+        return snap
+    roots = [r for r in folder_paths.get_folder_paths("diffusers")] or ["ComfyUI/models/diffusers"]
+    raise ModelNotDownloaded(path, target=roots[0], source=f"https://huggingface.co/{path}")
 
 
 def _dtype_of(s: str) -> torch.dtype:
@@ -224,7 +239,10 @@ class GLMImageVAELoader:
                 "device":          (["cuda", "cpu"], {"default": "cuda", "tooltip": _T_DEVICE}),
                 "enable_slicing":  ("BOOLEAN", {"default": True,  "tooltip": "Decode the latent in vertical slices to cut decode-time VRAM."}),
                 "enable_tiling":   ("BOOLEAN", {"default": True,  "tooltip": "Decode the latent in tiles for very large images. Recommended above 1024²."}),
-            }
+            },
+            "optional": {
+                "allow_download": ("BOOLEAN", {"default": False, "tooltip": "Let a [HF Hub] choice download the model (tens of GB) into the Hugging Face cache. Off: only an installed copy is used and the error says what is missing. Appended last: saved workflows keep their values."}),
+            },
         }
 
     RETURN_TYPES = ("GLMIMAGE_VAE",)
@@ -239,12 +257,12 @@ class GLMImageVAELoader:
             model_id, dtype, device, enable_slicing, enable_tiling, **kwargs,
         )
 
-    def load(self, model_id, dtype, device, enable_slicing, enable_tiling):
-        with torch.inference_mode():
+    def load(self, model_id, dtype, device, enable_slicing, enable_tiling, allow_download=False):
+        with allow_downloads(bool(allow_download)), torch.inference_mode():
             return self._load_impl(model_id, dtype, device, enable_slicing, enable_tiling)
 
     def _load_impl(self, model_id, dtype, device, enable_slicing, enable_tiling):
-        path = _resolve(model_id)
+        path = _resolve_for_load(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
         dev = "cuda" if (device == "cuda" and torch.cuda.is_available()) else "cpu"
@@ -285,7 +303,10 @@ class GLMImageCLIPLoader:
                 "model_id": (choices, {"default": choices[0], "tooltip": _T_MODEL_ID}),
                 "dtype":    (["bf16", "fp16", "fp32"], {"default": "bf16", "tooltip": _T_DTYPE}),
                 "device":   (["cuda", "cpu"], {"default": "cuda", "tooltip": _T_DEVICE}),
-            }
+            },
+            "optional": {
+                "allow_download": ("BOOLEAN", {"default": False, "tooltip": "Let a [HF Hub] choice download the model (tens of GB) into the Hugging Face cache. Off: only an installed copy is used and the error says what is missing. Appended last: saved workflows keep their values."}),
+            },
         }
 
     RETURN_TYPES = ("GLMIMAGE_CLIP",)
@@ -298,12 +319,12 @@ class GLMImageCLIPLoader:
     def IS_CHANGED(cls, model_id, dtype, device, **kwargs):
         return hash_args_and_kwargs(model_id, dtype, device, **kwargs)
 
-    def load(self, model_id, dtype, device):
-        with torch.inference_mode():
+    def load(self, model_id, dtype, device, allow_download=False):
+        with allow_downloads(bool(allow_download)), torch.inference_mode():
             return self._load_impl(model_id, dtype, device)
 
     def _load_impl(self, model_id, dtype, device):
-        path = _resolve(model_id)
+        path = _resolve_for_load(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
         dev = "cuda" if (device == "cuda" and torch.cuda.is_available()) else "cpu"
@@ -359,7 +380,10 @@ class GLMImageModelLoader:
                     "default": False,
                     "tooltip": "Slice attention to cut peak VRAM at the cost of speed. Enable on 6 GB GPUs.",
                 }),
-            }
+            },
+            "optional": {
+                "allow_download": ("BOOLEAN", {"default": False, "tooltip": "Let a [HF Hub] choice download the model (tens of GB) into the Hugging Face cache. Off: only an installed copy is used and the error says what is missing. Appended last: saved workflows keep their values."}),
+            },
         }
 
     RETURN_TYPES = ("GLMIMAGE_MODEL",)
@@ -374,12 +398,12 @@ class GLMImageModelLoader:
             model_id, dtype, device, attention_backend, attention_slicing, **kwargs,
         )
 
-    def load(self, model_id, dtype, device, attention_backend, attention_slicing):
-        with torch.inference_mode():
+    def load(self, model_id, dtype, device, attention_backend, attention_slicing, allow_download=False):
+        with allow_downloads(bool(allow_download)), torch.inference_mode():
             return self._load_impl(model_id, dtype, device, attention_backend, attention_slicing)
 
     def _load_impl(self, model_id, dtype, device, attention_backend, attention_slicing):
-        path = _resolve(model_id)
+        path = _resolve_for_load(model_id)
         _ensure_sdnq_registered(path)
         torch_dtype = _dtype_of(dtype)
         dev = "cuda" if (device == "cuda" and torch.cuda.is_available()) else "cpu"
