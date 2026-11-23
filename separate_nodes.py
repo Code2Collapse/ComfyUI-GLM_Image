@@ -499,11 +499,11 @@ class GLMImageSeparateSampler:
                 }),
                 "steps": ("INT", {
                     "default": 4, "min": 1, "max": 100,
-                    "tooltip": "Number of denoising steps. GLM-Image distilled checkpoints work great at 4–8 steps.",
+                    "tooltip": "Number of denoising steps. The GLM-Image model card uses 50; the default 4 is a fast preview and has not been measured against 50 (L9.314). Raise it for final images.",
                 }),
                 "guidance_scale": ("FLOAT", {
                     "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1,
-                    "tooltip": "Classifier-free guidance scale. 1.0 = no CFG (fastest). GLM-Image distilled prefers 1.0–2.0.",
+                    "tooltip": "Classifier-free guidance scale. 1.0 = no CFG (fastest). The GLM-Image model card uses 1.5.",
                 }),
                 "width": ("INT", {
                     "default": 512, "min": 64, "max": 2048, "step": 32,

@@ -98,8 +98,8 @@ Consumes the three bundles and runs sampling.
 | `prompt` | STRING (multiline) | demo prompt | Multilingual, plain English fine |
 | `negative_prompt` | STRING (multiline) | `""` | Ignored by SDNQ-4bit checkpoints |
 | `seed` | INT | `42` | — |
-| `steps` | INT | `4` | Distilled checkpoints work at 4–8 |
-| `guidance_scale` | FLOAT | `1.5` | `1.0` = no CFG; distilled prefers 1.0–2.0 |
+| `steps` | INT | `4` | The model card uses 50; 4 is a fast preview (not measured against 50) |
+| `guidance_scale` | FLOAT | `1.5` | `1.0` = no CFG; the model card uses 1.5 |
 | `width` / `height` | INT | `512` | Rounded to nearest multiple of 32 |
 | `batch_size` | INT | `1` | Linear VRAM cost |
 | `denoise_strength` | FLOAT | `1.0` | I2I only; truncates schedule (0.0 = return input) |
