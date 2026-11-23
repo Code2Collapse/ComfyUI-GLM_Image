@@ -347,7 +347,7 @@ class GLMImageCLIPLoader:
         print(f"[GLMImageCLIPLoader] loading text + vlm + tokenizer + processor from {path}")
         try:
             _glm = _require_glm_image()
-            tokenizer    = AutoTokenizer.from_pretrained(path, subfolder="tokenizer", trust_remote_code=True)
+            tokenizer    = AutoTokenizer.from_pretrained(path, subfolder="tokenizer")
             print(f"  [+{time.perf_counter()-t0:.1f}s] tokenizer ok")
             processor    = _glm["GlmImageProcessor"].from_pretrained(path, subfolder="processor")
             print(f"  [+{time.perf_counter()-t0:.1f}s] processor ok")
@@ -355,7 +355,7 @@ class GLMImageCLIPLoader:
             text_encoder.eval().to(dev)
             print(f"  [+{time.perf_counter()-t0:.1f}s] text_encoder ok")
             vlm = _glm["GlmImageForConditionalGeneration"].from_pretrained(
-                path, subfolder="vision_language_encoder", torch_dtype=torch_dtype, trust_remote_code=True,
+                path, subfolder="vision_language_encoder", torch_dtype=torch_dtype,
             )
             vlm.eval().to(dev)
             print(f"  [+{time.perf_counter()-t0:.1f}s] vlm ok — TOTAL {time.perf_counter()-t0:.1f}s")
