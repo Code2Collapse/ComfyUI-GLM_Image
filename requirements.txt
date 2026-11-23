@@ -1,4 +1,6 @@
-git+https://github.com/huggingface/transformers.git
-git+https://github.com/huggingface/diffusers.git
-torch
+# Released minimum versions (L9.314): the first diffusers / transformers releases that ship GLM-Image
+# (diffusers v0.37.0 pipelines/glm_image, transformers v5.0.0 models/glm_image - checked in each repo at its tag).
+# torch is not listed: ComfyUI provides it, and a node pack must never reinstall it.
+diffusers>=0.37.0
+transformers>=5.0.0
 pillow

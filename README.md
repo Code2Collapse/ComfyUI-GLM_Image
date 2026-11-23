@@ -29,7 +29,7 @@ Embedded-Python users (ComfyUI portable):
 ..\..\python_embeded\python.exe -m pip install -r ComfyUI-GLM_Image\requirements.txt
 ```
 
-`requirements.txt` pulls `transformers` and `diffusers` from git so the GLM-Image pipeline classes are available. SDNQ-quantized checkpoints additionally require `pip install sdnq`.
+`requirements.txt` asks for diffusers 0.37.0 or newer and transformers 5.0.0 or newer, the first releases that ship the GLM-Image pipeline (it used to pull both from their git main branches, and listed torch, which ComfyUI already provides). transformers 5 is a major version: if another pack in your ComfyUI pins transformers 4, the two cannot share one Python. SDNQ-quantized checkpoints additionally require `pip install sdnq`.
 
 Place the diffusers folder at:
 

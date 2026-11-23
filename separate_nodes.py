@@ -39,11 +39,10 @@ from transformers import AutoTokenizer, T5EncoderModel
 
 
 _GLM_IMAGE_INSTALL_HINT = (
-    "GLM-Image requires a diffusers build that exposes the `glm_image` pipeline "
-    "and the FlowMatch Euler scheduler. Your installed diffusers does not have them yet. "
-    "Install a build that does, e.g.:\n"
-    "    pip install --upgrade 'git+https://github.com/huggingface/diffusers.git'\n"
-    "Then restart ComfyUI."
+    "GLM-Image needs diffusers 0.37.0 or newer (the first release with the GLM-Image pipeline) and "
+    "transformers 5.0.0 or newer. Your installed diffusers does not have the pipeline yet. Install:\n"
+    "    pip install 'diffusers>=0.37.0' 'transformers>=5.0.0'\n"
+    "into ComfyUI's Python, then restart ComfyUI."
 )
 
 
