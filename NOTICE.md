@@ -16,8 +16,8 @@ are reproduced below as required by the respective terms.
 - **License**: Apache License 2.0  
   https://www.apache.org/licenses/LICENSE-2.0
 
-The `glm_native/` modules are original ComfyUI integration wrappers written by
-Code2Collapse. They call into the model architecture that ships inside the
+The nodes in `separate_nodes.py` are original ComfyUI integration code written
+by Code2Collapse. They call into the model architecture that ships inside the
 `diffusers` library under the same Apache-2.0 terms.
 
 ---
