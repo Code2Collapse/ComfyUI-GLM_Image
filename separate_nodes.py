@@ -145,9 +145,12 @@ def _ensure_sdnq_registered(path: str):
             ) from e
 
 
-def _free_vram_ram():
-    try: mm.unload_all_models()
-    except Exception: pass
+def _free_vram_ram(unload_all: bool = True):
+    # L9.314: only free_after (its tooltip says "Unload all models") unloads ComfyUI's models; a failed GLM load
+    # used to evict every other model in the workflow as well. Error paths only clear caches.
+    if unload_all:
+        try: mm.unload_all_models()
+        except Exception: pass
     try: mm.soft_empty_cache()
     except Exception: pass
     gc.collect()
@@ -279,7 +282,7 @@ class GLMImageVAELoader:
             print(f"[GLMImageVAELoader] loaded in {time.perf_counter()-t0:.1f}s")
             return ({"vae": vae, "dtype": torch_dtype, "device": dev, "path": path},)
         except Exception:
-            _free_vram_ram(); raise
+            _free_vram_ram(unload_all=False); raise
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +352,7 @@ class GLMImageCLIPLoader:
                 "dtype": torch_dtype, "device": dev, "path": path,
             },)
         except Exception:
-            _free_vram_ram(); raise
+            _free_vram_ram(unload_all=False); raise
 
 
 # ---------------------------------------------------------------------------
@@ -433,7 +436,7 @@ class GLMImageModelLoader:
                 "attention_slicing": attention_slicing,
             },)
         except Exception:
-            _free_vram_ram(); raise
+            _free_vram_ram(unload_all=False); raise
 
 
 # ---------------------------------------------------------------------------
