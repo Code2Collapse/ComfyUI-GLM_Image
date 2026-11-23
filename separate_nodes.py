@@ -101,9 +101,22 @@ def _scan_diffusers_folders():
     return found
 
 
+def _sdnq_available() -> bool:
+    import importlib.util
+    try:
+        return importlib.util.find_spec("sdnq") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _build_choices():
     local = [rel for rel, _ in _scan_diffusers_folders()]
-    hub = [f"[HF Hub] {r}" for r in _HF_HUB_FALLBACKS]
+    repos = list(_HF_HUB_FALLBACKS)
+    if not _sdnq_available():
+        # L9.314: the default (first) choice was the SDNQ variant, which only loads with the `sdnq` package. Without
+        # it, offer the plain repo first; the SDNQ entry stays listed (saved workflows keep their value).
+        repos.sort(key=lambda r: "sdnq" in r.lower())
+    hub = [f"[HF Hub] {r}" for r in repos]
     return local + hub or hub
 
 
